@@ -1,0 +1,4 @@
+.venv
+secrets.toml
+__pycache__
+model_cache

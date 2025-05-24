@@ -1,0 +1,10 @@
+streamlit
+tensorflow
+opencv-python-headless
+Pillow
+numpy
+plotly
+st-supabase-connection
+bcrypt
+streamlit-cookies-manager
+gdown
