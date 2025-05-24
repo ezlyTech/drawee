@@ -106,19 +106,45 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-def get_model():
-    file_id = "1_4pP1CIC_DSRa7wHXaTMSjY4nJbR9XO0"
-    output_path = "model_cache/drawee-v1.7.h5"
+# def get_model():
+#     file_id = "1_4pP1CIC_DSRa7wHXaTMSjY4nJbR9XO0"
+#     output_path = "model_cache/drawee-v1.7.h5"
 
-    # Make sure the directory exists
+#     # Make sure the directory exists
+#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+#     # Download only if the file doesn't already exist
+#     if not os.path.exists(output_path):
+#         url = f"https://drive.google.com/uc?id={file_id}"
+#         gdown.download(url, output_path, quiet=False)
+
+#     return load_model(output_path)
+
+def get_model(model_name):
+    model_map = {
+        "resnet": {
+            "file_id": "1zx4ks1V2SPZem8oeqpNc2cYqN6l_z0oJ",
+            "filename": "drawee-resnet.h5"
+        },
+        "xception": {
+            "file_id": "1ibBelZfUwtr_GEP26mjStfJZYj3HeFtg",
+            "filename": "drawee-xception.h5"
+        }
+    }
+
+    model_info = model_map.get(model_name)
+    if not model_info:
+        raise ValueError(f"Unknown model name: {model_name}")
+
+    output_path = f"model_cache/{model_info['filename']}"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # Download only if the file doesn't already exist
     if not os.path.exists(output_path):
-        url = f"https://drive.google.com/uc?id={file_id}"
+        url = f"https://drive.google.com/uc?id={model_info['file_id']}"
         gdown.download(url, output_path, quiet=False)
 
     return load_model(output_path)
+
 
 if is_authenticated():
 
@@ -178,50 +204,52 @@ if is_authenticated():
             st.markdown("<h5>📸 Upload the Drawing</h5>", unsafe_allow_html=True)
             upload = st.file_uploader("", type=["png", "jpg", "jpeg"], key="file_input", label_visibility="collapsed")
 
-            # @st.cache_resource
-            # def get_model():
-            #     # return load_model("drawee-v1.6.h5") # okay naman, pero 40% accuracy
-            #     # return load_model("drawee-v1.6.5.h5") # puro schematic sya 100%
-            #     # return load_model("drawee-v1.6.4.h5") # puro gang sya, di tumatama sa scribbling
-            #     # return load_model("drawee-v1.6.2.h5") # puro scribbling sya 100%
-            #     return load_model("drawee-v1.7.h5")
 
             if upload:
                 im = Image.open(upload).convert("RGB")
                 img = np.asarray(im)
 
-                # v.1.6+ (ResNet50 Model)
-                # resized_img = cv2.resize(img, (182, 183)) / 255.0
-                # image = resized_img.reshape(1, -1)  # Flatten image to 1D vector
+                # --- Preprocessing for ResNet ---
+                resnet_img = cv2.resize(img, (256, 256)) / 255.0
+                resnet_input = np.expand_dims(resnet_img, axis=0)
 
-                # # If needed, crop or pad to 100,352
-                # expected_size = 100352
-
-                # if image.shape[1] > expected_size:
-                #     # Crop extra features
-                #     image = image[:, :expected_size]
-                # elif image.shape[1] < expected_size:
-                #     # Pad with zeros
-                #     padding = expected_size - image.shape[1]
-                #     image = np.pad(image, ((0, 0), (0, padding)), mode='constant')
-
-
-                # v.7 (Xception Model)
-                resized_img = cv2.resize(img, (256, 256))
-                resized_img = resized_img / 255.0
-                image = np.expand_dims(resized_img, axis=0)
+                # --- Preprocessing for Xception ---
+                xception_img = cv2.resize(img, (256, 256)) / 255.0
+                xception_input = np.expand_dims(xception_img, axis=0)
 
                 @st.dialog("🎯 Analysis Result")
                 def show_result_dialog():
                     with st.spinner("Analyzing your drawing..."):
                         time.sleep(2)
-                        model = get_model()
-                        preds = model.predict(image)
-                        percentages = preds[0]
-                        pred_class = np.argmax(percentages)
-                        stage_name = classes[pred_class]
-                        confidence = percentages[pred_class] * 100
 
+                        # Load both models
+                        resnet_model = get_model("resnet")
+                        xception_model = get_model("xception")
+
+                        try:
+                            resnet_pred = resnet_model.predict(resnet_input)
+                        except Exception as e:
+                            st.error(f"❌ ResNet model prediction failed: {e}")
+                            return
+
+                        try:
+                            xception_pred = xception_model.predict(xception_input)
+                        except Exception as e:
+                            st.error(f"❌ Xception model prediction failed: {e}")
+                            return
+
+                        # Ensure shapes match for averaging
+                        if resnet_pred.shape != xception_pred.shape:
+                            st.error(f"⚠️ Prediction shape mismatch: ResNet shape {resnet_pred.shape}, Xception shape {xception_pred.shape}")
+                            return
+
+                        # Average predictions
+                        final_pred = (resnet_pred + xception_pred) / 2
+                        pred_class = np.argmax(final_pred)
+                        stage_name = classes[pred_class]
+                        confidence = final_pred[0][pred_class] * 100
+
+                        # Save image to storage
                         image_bytes = io.BytesIO()
                         im.save(image_bytes, format='PNG')
                         image_bytes = image_bytes.getvalue()
@@ -231,6 +259,7 @@ if is_authenticated():
                         supabase_admin.storage.from_("drawings").upload(storage_path, image_bytes)
                         image_url = supabase_admin.storage.from_("drawings").get_public_url(storage_path)
 
+                        # Store result in Supabase
                         supabase_admin.table("results").insert({
                             "user_id": user_id,
                             "child_id": child_id_local,
@@ -239,20 +268,27 @@ if is_authenticated():
                             "confidence": float(confidence)
                         }).execute()
 
+                    # Display results
                     st.markdown(f"**{stage_name}** - {stage_insights[stage_name]}")
                     st.markdown(f"Confidence: **{confidence:.2f}%**")
                     st.image(im, caption='Uploaded Drawing', use_container_width=True)
+                    # st.write("ResNet prediction:", resnet_pred)
+                    # st.write("Xception prediction:", xception_pred)
+                    # st.write("Final averaged prediction:", final_pred)
+                    # st.image(im, caption='Uploaded Drawing', use_container_width=True)
 
+                    # Plot bar chart
                     fig = go.Figure(go.Bar(
-                        x=percentages * 100,
+                        x=final_pred[0] * 100,
                         y=classes,
                         orientation='h',
-                        text=[f"{p*100:.1f}%" for p in percentages],
+                        text=[f"{p:.1f}%" for p in final_pred[0] * 100],
                         textposition='outside',
                         marker=dict(color=['#ff6666' if i == pred_class else '#ffcccc' for i in range(len(classes))])
                     ))
                     st.plotly_chart(fig, use_container_width=True)
 
+                    # Tips and activities
                     st.subheader("Development Tips")
                     for tip in development_tips[stage_name]:
                         st.markdown(f"- {tip}")
@@ -260,9 +296,11 @@ if is_authenticated():
                     for activity in recommended_activities[stage_name]:
                         st.markdown(f"- {activity}")
 
+
                 show_result_dialog()
 
-        st.markdown("---")
+            st.markdown("---")
+
 
         # Inject CSS to style the "button" like a link
         st.markdown("""
