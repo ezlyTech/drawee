@@ -270,7 +270,7 @@ if is_authenticated():
 
                     # Display results
                     st.markdown(f"**{stage_name}** - {stage_insights[stage_name]}")
-                    st.markdown(f"Confidence: **{confidence:.2f}%**")
+                    st.success(f"{stage_name}: **{confidence:.2f}%**")
                     st.image(im, caption='Uploaded Drawing', use_container_width=True)
                     # st.write("ResNet prediction:", resnet_pred)
                     # st.write("Xception prediction:", xception_pred)
