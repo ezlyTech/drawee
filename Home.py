@@ -152,10 +152,6 @@ for i, (label, desc) in enumerate(stages_info.items()):
 if st.button("Learn More About Drawee", use_container_width=True):
     st.switch_page("pages/2_About Drawee.py")
 
-if is_authenticated():
-    if st.button("Logout", use_container_width=True):
-        logout()
-        st.rerun()
 
 
 st.markdown("---")
