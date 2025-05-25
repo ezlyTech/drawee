@@ -138,7 +138,12 @@ if is_authenticated():
         # --- Show Analyze UI ---
         
         with st.container():
-            st.markdown("""
+            user_id = st.session_state['user']['id']
+            profile_resp = supabase_admin.table("profiles").select("display_name").eq("id", user_id).single().execute()
+
+            display_name = profile_resp.data["display_name"] if profile_resp.data and "display_name" in profile_resp.data else st.session_state['user']['email']
+
+            st.markdown(f"""
                 <div style="
                     background-color: white;
                     padding: 1rem;
@@ -150,10 +155,11 @@ if is_authenticated():
                     margin-bottom: 2rem;
                 ">
                     <div style="font-size: 1.2rem; font-weight: 600;">
-                        👋 Welcome, <strong>{user}</strong>
+                        👋 Welcome, <strong>{display_name}</strong>
                     </div>
                 </div>
-            """.format(user=st.session_state['user']['email']), unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+
 
         # --- Existing Analyze UI here ---
 

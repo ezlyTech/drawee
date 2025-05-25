@@ -95,7 +95,12 @@ st.markdown(
 
 # --- If authenticated, show welcome and logout ---
 if is_authenticated():
-    st.success(f"Welcome back, {st.session_state['user']['email']}!")
+    # st.success(f"Welcome back, {st.session_state['user']['email']}!")
+    # With this block:
+    user_id = st.session_state['user']['id']
+    profile = supabase.table("profiles").select("display_name").eq("id", user_id).single().execute()
+    display_name = profile.data["display_name"] if profile.data else st.session_state['user']['email']
+    st.success(f"Welcome back, {display_name}!")
 
     if st.button("Analyze Drawings", use_container_width=True):
         st.switch_page("pages/1_Analyze.py")
@@ -124,6 +129,7 @@ else:
     # --- Create Account Tab ---
     with tabs[1]:
         new_email = st.text_input("Email", key="signup_email")
+        display_name = st.text_input("Display Name", key="signup_display_name")
         new_password = st.text_input("Password", type="password", key="signup_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
 
@@ -132,13 +138,27 @@ else:
                 st.error("Passwords do not match.")
             elif len(new_password) < 6:
                 st.warning("Password must be at least 6 characters.")
+            elif not display_name.strip():
+                st.warning("Please enter a display name.")
             else:
-                if signup(new_email, new_password):
-                    st.success("Account created! Logging you in...")
-                    if login(new_email, new_password):
-                        st.switch_page("pages/1_Analyze.py")
+                result = signup(new_email, new_password)
+                if result:
+                    user_id = result.user.id
+                    insert_result = supabase.table("profiles").insert({
+                        "id": user_id,
+                        "display_name": display_name.strip()
+                    }).execute()
+
+                    if insert_result.error is None and insert_result.data is not None:
+                        st.success("Account created! Logging you in...")
+                        if login(new_email, new_password):
+                            st.switch_page("pages/1_Analyze.py")
+                    else:
+                        st.error(f"Failed to save display name: {insert_result.error.message if insert_result.error else 'Unknown error'}")
                 else:
                     st.error("Account creation failed.")
+
+
 
 
 

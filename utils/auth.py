@@ -15,9 +15,9 @@ def get_supabase_admin_client() -> Client:
         return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     return None
 
-def signup(email: str, password: str) -> bool:
+def signup(email: str, password: str):
     """
-    Create a new user using Supabase Auth.
+    Create a new user using Supabase Auth and return the result object.
     """
     try:
         result = supabase.auth.sign_up({
@@ -25,11 +25,12 @@ def signup(email: str, password: str) -> bool:
             "password": password
         })
         if result.user:
-            st.success("Account created successfully! Please check your email for confirmation (if enabled).")
-            return True
+            # Do NOT show success message here anymore (do it in your UI)
+            return result  # Return full result to access user.id
     except Exception as e:
         st.error(f"Signup failed: {e}")
-    return False
+    return None
+
 
 def login(email: str, password: str) -> bool:
     """
