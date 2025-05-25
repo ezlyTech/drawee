@@ -106,20 +106,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# def get_model():
-#     file_id = "1_4pP1CIC_DSRa7wHXaTMSjY4nJbR9XO0"
-#     output_path = "model_cache/drawee-v1.7.h5"
-
-#     # Make sure the directory exists
-#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-#     # Download only if the file doesn't already exist
-#     if not os.path.exists(output_path):
-#         url = f"https://drive.google.com/uc?id={file_id}"
-#         gdown.download(url, output_path, quiet=False)
-
-#     return load_model(output_path)
-
 def get_model(model_name):
     model_map = {
         "resnet": {
@@ -164,11 +150,10 @@ if is_authenticated():
                     margin-bottom: 2rem;
                 ">
                     <div style="font-size: 1.2rem; font-weight: 600;">
-                        👋 Welcome, <strong>{username}</strong>
+                        👋 Welcome, <strong>{user}</strong>
                     </div>
                 </div>
-            """.format(username=st.session_state['user']['username']), unsafe_allow_html=True)
-
+            """.format(user=st.session_state['user']['email']), unsafe_allow_html=True)
 
         # --- Existing Analyze UI here ---
 
@@ -187,16 +172,23 @@ if is_authenticated():
         child_name = new_child_name.strip() if new_child_name else (selected_name if selected_name != "New Record" else "")
 
         if child_name:
-            child_response = supabase_admin.table("children").select("id").eq("user_id", user_id).eq("name", child_name).execute()
-            if child_response.data:
+            child_response = supabase_admin.table("children").select("id").eq("name", child_name).eq("user_id", user_id).execute()
+
+            if child_response.data and len(child_response.data) > 0:
+                # Use the first existing child record
                 child_id_local = child_response.data[0]['id']
             else:
-                child_id_local = str(uuid.uuid4())
-                supabase_admin.table("children").insert({
-                    "id": child_id_local,
-                    "user_id": user_id,
-                    "name": child_name
+                # No child found – insert a new child record
+                insert_response = supabase_admin.table("children").insert({
+                    "name": child_name,
+                    "user_id": user_id
                 }).execute()
+
+                if insert_response.data and len(insert_response.data) > 0:
+                    child_id_local = insert_response.data[0]['id']
+                else:
+                    st.error("Failed to create a new child record.")
+                    st.stop()
 
             st.session_state['current_child_id'] = child_id_local
             st.session_state['current_child_name'] = child_name
@@ -263,6 +255,7 @@ if is_authenticated():
                         supabase_admin.table("results").insert({
                             "user_id": user_id,
                             "child_id": child_id_local,
+                            "child_name": child_name,
                             "image_path": image_url,
                             "prediction": stage_name,
                             "confidence": float(confidence)
@@ -449,34 +442,33 @@ else:
     tabs = st.tabs(["🔐 Login", "📝 Create an Account"])
 
     with tabs[0]:
-        username = st.text_input("Username", key="login_username")
+        email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_password")
-
+        
         if st.button("Login", use_container_width=True):
-            if login(username, password):
+            if login(email, password):
                 st.success("Logged in successfully!")
-                st.rerun()
+                st.switch_page("pages/1_Analyze.py")
             else:
-                st.error("Invalid username or password.")
+                st.error("Invalid credentials or user not found.")
 
     with tabs[1]:
-        new_username = st.text_input("Choose a Username", key="signup_username")
-        new_password = st.text_input("Choose a Password", type="password", key="signup_password")
+        new_email = st.text_input("Email", key="signup_email")
+        new_password = st.text_input("Password", type="password", key="signup_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
 
         if st.button("Create Account", use_container_width=True):
             if new_password != confirm_password:
                 st.error("Passwords do not match.")
-            elif len(new_username) < 3 or len(new_password) < 5:
-                st.warning("Username must be at least 3 characters, password at least 5.")
+            elif len(new_password) < 6:
+                st.warning("Password must be at least 6 characters.")
             else:
-                result = signup(new_username, new_password)
-                if result:
-                    st.success("Account created successfully! Logging you in...")
-                    if login(new_username, new_password):
-                        st.rerun()
+                if signup(new_email, new_password):
+                    st.success("Account created! Logging you in...")
+                    if login(new_email, new_password):
+                        st.switch_page("pages/1_Analyze.py")
                 else:
-                    st.error("Username already taken or account creation failed.")
+                    st.error("Account creation failed.")
 
 
 # Footer

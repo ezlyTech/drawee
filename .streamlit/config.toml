@@ -3,4 +3,4 @@ base="light"
 
 [server]
 headless=true
-enableCORS=false
+enableCORS=true

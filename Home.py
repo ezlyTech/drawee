@@ -3,20 +3,15 @@
 import streamlit as st
 st.set_page_config(page_title="Drawee", page_icon="🖼️")
 
-from st_supabase_connection import SupabaseConnection
-import numpy as np
-import plotly.graph_objects as go
-import time
-from PIL import Image
-import cv2
-from tensorflow.keras.models import load_model
-from utils.auth import login, signup, is_authenticated, logout, get_supabase_client, get_supabase_admin_client
+# from st_supabase_connection import SupabaseConnection
+# from tensorflow.keras.models import load_model
+from utils.auth import login, signup, is_authenticated, logout, get_supabase_client
 from classes_def import stages_info
 
 
 # --- Connect to Supabase ---
 supabase = get_supabase_client()
-supabase_admin = get_supabase_admin_client()
+# supabase_admin = get_supabase_admin_client()
 
 # --- Streamlit UI ---
 
@@ -100,8 +95,14 @@ st.markdown(
 
 # --- If authenticated, show welcome and logout ---
 if is_authenticated():
+    st.success(f"Welcome back, {st.session_state['user']['email']}!")
+
     if st.button("Analyze Drawings", use_container_width=True):
         st.switch_page("pages/1_Analyze.py")
+
+    if st.button("Logout", use_container_width=True):
+            logout()
+            st.rerun()
 
 else:
     st.markdown("<h5 style='text-align: center;'>Log in or create an account to start analyzing children's drawings.</h5>", unsafe_allow_html=True)
@@ -110,35 +111,34 @@ else:
 
     # --- Login Tab ---
     with tabs[0]:
-        username = st.text_input("Username", key="login_username")
+        email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_password")
         
         if st.button("Login", use_container_width=True):
-            if login(username, password):
+            if login(email, password):
                 st.success("Logged in successfully!")
                 st.switch_page("pages/1_Analyze.py")
             else:
-                st.error("Invalid username or password.")
+                st.error("Invalid credentials or user not found.")
 
     # --- Create Account Tab ---
     with tabs[1]:
-        new_username = st.text_input("Choose a Username", key="signup_username")
-        new_password = st.text_input("Choose a Password", type="password", key="signup_password")
+        new_email = st.text_input("Email", key="signup_email")
+        new_password = st.text_input("Password", type="password", key="signup_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
 
         if st.button("Create Account", use_container_width=True):
             if new_password != confirm_password:
                 st.error("Passwords do not match.")
-            elif len(new_username) < 3 or len(new_password) < 5:
-                st.warning("Username must be at least 3 characters, password at least 5.")
+            elif len(new_password) < 6:
+                st.warning("Password must be at least 6 characters.")
             else:
-                result = signup(new_username, new_password)
-                if result:
-                    st.success("Account created successfully! Logging you in...")
-                    if login(new_username, new_password):
+                if signup(new_email, new_password):
+                    st.success("Account created! Logging you in...")
+                    if login(new_email, new_password):
                         st.switch_page("pages/1_Analyze.py")
                 else:
-                    st.error("Username already taken or account creation failed.")
+                    st.error("Account creation failed.")
 
 
 

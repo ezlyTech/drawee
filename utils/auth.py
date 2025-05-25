@@ -1,70 +1,100 @@
 import streamlit as st
-import bcrypt
-from supabase import create_client
-from streamlit_cookies_manager import EncryptedCookieManager
+from supabase import create_client, Client
 
 # Load Supabase credentials from secrets.toml
-supabase_url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-supabase_anon_key = st.secrets["connections"]["supabase"]["SUPABASE_ANON_KEY"]
-supabase_service_key = st.secrets["connections"]["supabase"]["SUPABASE_SERVICE_ROLE_KEY"]
-cookie_secret = st.secrets["cookie_password"]
+SUPABASE_URL = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+SUPABASE_ANON_KEY = st.secrets["connections"]["supabase"]["SUPABASE_ANON_KEY"]
+SUPABASE_SERVICE_ROLE_KEY = st.secrets["connections"]["supabase"]["SUPABASE_SERVICE_ROLE_KEY"]
+# cookie_secret = st.secrets["cookie_password"]
 
-# Initialize Supabase clients
-supabase = create_client(supabase_url, supabase_anon_key)
-supabase_admin = create_client(supabase_url, supabase_service_key)
+# Initialize Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-# Initialize EncryptedCookieManager
-cookies = EncryptedCookieManager(prefix="drawee", password=cookie_secret)
+def get_supabase_admin_client() -> Client:
+    if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+        return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return None
 
-if not cookies.ready():
-    st.stop()  # Wait for cookies to initialize
-
-def login(username: str, password: str) -> bool:
-    """Authenticate user and store session and cookie if successful"""
+def signup(email: str, password: str) -> bool:
+    """
+    Create a new user using Supabase Auth.
+    """
     try:
-        response = supabase.table("users").select("*").eq("username", username).execute()
-        if response.data:
-            user = response.data[0]
-            if bcrypt.checkpw(password.encode(), user["password"].encode()):
-                st.session_state["user"] = user
-                cookies["username"] = user["username"]  # Store cookie for session persistence
-                return True
+        result = supabase.auth.sign_up({
+            "email": email,
+            "password": password
+        })
+        if result.user:
+            st.success("Account created successfully! Please check your email for confirmation (if enabled).")
+            return True
+    except Exception as e:
+        st.error(f"Signup failed: {e}")
+    return False
+
+def login(email: str, password: str) -> bool:
+    """
+    Login with email and password using Supabase Auth.
+    Stores user data as a dictionary in st.session_state["user"].
+    """
+    try:
+        result = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+
+        if result.session and result.user:
+            # Extract relevant user details
+            user_info = {
+                "id": result.user.id,
+                "email": result.user.email,
+                "username": result.user.user_metadata.get("username", "")  # optional
+            }
+
+            # Store session and user info in session_state
+            st.session_state["session"] = result.session
+            st.session_state["user"] = user_info
+
+            return True
     except Exception as e:
         st.error(f"Login failed: {e}")
     return False
 
-def signup(username: str, password: str) -> bool:
-    """Create a new user account with hashed password"""
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    try:
-        response = supabase.table("users").insert({
-            "username": username,
-            "password": hashed_pw
-        }).execute()
-        return response.data is not None
-    except Exception as e:
-        st.error(f"Signup failed: {e}")
-        return False
-
-def logout():
-    """Clear user session and remove cookies"""
-    st.session_state.pop("user", None)
-    cookies["username"] = ""
 
 def is_authenticated() -> bool:
-    """Check if user is logged in, restore session from cookie if possible"""
+    """
+    Check if the user is authenticated.
+    Restores session if available.
+    """
     if "user" in st.session_state:
         return True
-    elif "username" in cookies and cookies["username"]:
-        username = cookies["username"]
-        response = supabase.table("users").select("*").eq("username", username).execute()
-        if response.data:
-            st.session_state["user"] = response.data[0]
-            return True
+
+    # Try restoring session
+    session_info = supabase.auth.get_session()
+    if session_info and session_info.user:
+        user = session_info.user
+        user_info = {
+            "id": user.id,
+            "email": user.email,
+            "username": user.user_metadata.get("username", "") if user.user_metadata else ""
+        }
+        st.session_state["session"] = session_info
+        st.session_state["user"] = user_info
+        return True
+
     return False
 
-def get_supabase_client():
-    return supabase
+def logout():
+    """
+    Log the user out and clear session.
+    """
+    try:
+        supabase.auth.sign_out()
+    except Exception as e:
+        st.warning(f"Logout failed: {e}")
+    st.session_state.clear()
 
-def get_supabase_admin_client():
-    return supabase_admin
+def get_supabase_client():
+    """
+    Get Supabase client with anon key.
+    """
+    return supabase
